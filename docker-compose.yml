@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  bblam-reactjs:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: bblam-reactjs
+    ports:
+      - "3000:80"
+    networks:
+      - bblam-network
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+
+networks:
+  bblam-network:
+    driver: bridge

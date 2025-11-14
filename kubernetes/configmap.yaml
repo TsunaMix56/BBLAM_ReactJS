@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: bblam-reactjs-config
+data:
+  API_BASE_URL: "http://172.23.240.1:8000"
+  API_MODE: "PROXY"

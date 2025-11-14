@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8" />
+  <title>Deployment Guide - BBLAM ReactJS</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    :root {
+      --bg: #e6f3ff;
+      --panel: #ffffff;
+      --primary: #1976d2;
+      --primary-grad: linear-gradient(135deg,#42a5f5,#1976d2);
+      --border: #b3d9ff;
+      --code-bg: #0f1e33;
+      --code-text: #d8eefe;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin:0; font-family: 'Segoe UI', Arial, sans-serif; background: var(--bg); color:#1e2f45;
+      line-height:1.55; -webkit-font-smoothing:antialiased;
+    }
+    header { padding:48px 24px 16px; text-align:center; }
+    header h1 { margin:0 0 12px; font-size:38px; background:var(--primary-grad); -webkit-background-clip:text; color:transparent; }
+    header p { margin:0; font-size:18px; color:#2e4766; }
+    main { max-width:1080px; margin:0 auto 64px; padding:0 24px; }
+    section { background:var(--panel); margin:28px 0; padding:32px 28px; border:1px solid var(--border); border-radius:18px; position:relative; overflow:hidden; }
+    section:before { content:""; position:absolute; inset:0; background:radial-gradient(circle at top right, rgba(66,165,245,0.12), transparent 60%); pointer-events:none; }
+    h2 { margin:0 0 20px; font-size:28px; color:var(--primary); display:flex; align-items:center; gap:10px; }
+    h3 { margin:32px 0 12px; font-size:20px; color:#205b96; }
+    p { margin:0 0 16px; }
+    ul { margin:0 0 20px 20px; padding:0; }
+    li { margin:6px 0; }
+    code, pre { font-family: 'Fira Code', 'Consolas', monospace; font-size:14px; }
+    pre { background:var(--code-bg); color:var(--code-text); padding:16px 18px; border-radius:12px; overflow:auto; border:1px solid #21456e; box-shadow:0 4px 18px -6px rgba(0,40,88,0.4); }
+    .grid { display:grid; gap:20px; }
+    @media (min-width:860px) { .grid.cols-2 { grid-template-columns:1fr 1fr; } }
+    .badge { display:inline-block; padding:4px 10px; background:var(--primary-grad); color:#fff; border-radius:16px; font-size:12px; letter-spacing:.5px; }
+    .steps { counter-reset: step; }
+    .steps li { list-style:none; position:relative; padding-left:44px; margin:14px 0; }
+    .steps li:before { counter-increment: step; content:counter(step); position:absolute; left:0; top:0; width:32px; height:32px; background:var(--primary-grad); color:#fff; display:flex; align-items:center; justify-content:center; font-weight:600; border-radius:50%; box-shadow:0 4px 12px rgba(25,118,210,.35); }
+    .inline-code { background:#d4e9fb; padding:2px 6px; border-radius:6px; font-size:13px; }
+    .panel-note { background:#f1f9ff; border-left:4px solid #42a5f5; padding:14px 16px; border-radius:10px; font-size:14px; margin:18px 0; }
+    footer { text-align:center; padding:40px 24px 80px; font-size:13px; color:#517099; }
+    a { color:#1565c0; text-decoration:none; }
+    a:hover { text-decoration:underline; }
+    .cmd-group { margin:0 0 22px; }
+    .tag { font-weight:600; color:#0d3d66; }
+  </style>
+</head>
+<body>
+<header>
+  <h1>BBLAM ReactJS Deployment Guide</h1>
+  <p>คู่มือการขึ้นระบบด้วย Docker & Kubernetes – โทนสีฟ้าอ่านสบาย</p>
+</header>
+<main>
+  <section>
+    <h2>1. ภาพรวม (Overview)</h2>
+    <p>โปรเจกต์นี้เป็นแอป React + Vite สำหรับ Authentication พร้อม Token Management และหน้า Login / Create Account / Welcome ครบถ้วน รองรับการ Deploy แบบ Static ผ่าน Nginx และสามารถ Proxy ต่อไปยัง API ภายนอกได้</p>
+    <ul class="grid cols-2">
+      <li><span class="badge">Frontend</span> Vite + React 18</li>
+      <li><span class="badge">Auth</span> Bearer Token + Refresh (เงื่อนไขหมดอายุ)</li>
+      <li><span class="badge">Docker</span> Multi-stage build → Nginx</li>
+      <li><span class="badge">Kubernetes</span> Deployment + Service + Ingress</li>
+    </ul>
+    <div class="panel-note">
+      ปรับค่า Backend API ได้ที่ <span class="inline-code">nginx.conf</span> (Docker) หรือ <span class="inline-code">configmap.yaml</span> (Kubernetes)
+    </div>
+  </section>
+
+  <section>
+    <h2>2. เตรียมเครื่อง (Prerequisites)</h2>
+    <ul class="steps">
+      <li>ติดตั้ง <strong>Node.js 18+</strong> (ถ้าจะ build local ก่อน)</li>
+      <li>ติดตั้ง <strong>Docker Desktop</strong> หรือ Docker Engine</li>
+      <li>ติดตั้ง <strong>kubectl</strong> และมี Kubernetes Cluster (Minikube / K3s / Cloud)</li>
+      <li>Optional: ติดตั้ง <strong>Ingress Controller</strong> (เช่น nginx-ingress)</li>
+    </ul>
+    <pre><code># ตรวจสอบเวอร์ชัน
+node -v
+npm -v
+docker -v
+kubectl version --client</code></pre>
+  </section>
+
+  <section>
+    <h2>3. โครงสร้างไฟล์สำคัญ</h2>
+    <pre><code>Dockerfile            # Multi-stage build → Nginx
+nginx.conf            # Static + /api proxy
+kubernetes/
+  ├─ deployment.yaml  # Deployment + Service (LoadBalancer / NodePort)
+  ├─ configmap.yaml   # ค่า API_BASE_URL, API_MODE
+  └─ ingress.yaml     # Routing hostname (optional)
+src/config/apiConfig.js  # กำหนด DIRECT / PROXY mode
+src/services/tokenService.js  # จัดการ token
+</code></pre>
+  </section>
+
+  <section>
+    <h2>4. Build Production (Vite)</h2>
+    <pre><code>npm install
+npm run build   # สร้างโฟลเดอร์ dist/ พร้อมไฟล์ static</code></pre>
+    <div class="panel-note">ขั้นตอนนี้ถูกทำใน Docker build แล้ว แต่สามารถทดสอบก่อนแยกได้</div>
+  </section>
+
+  <section>
+    <h2>5. Deploy ด้วย Docker</h2>
+    <h3>A. Build Image</h3>
+    <pre><code>docker build -t bblam-reactjs:latest .</code></pre>
+    <h3>B. Run Container</h3>
+    <pre><code>docker run -d -p 3000:80 --name bblam-reactjs bblam-reactjs:latest</code></pre>
+    <p>เปิดใช้งานที่ <span class="inline-code">http://localhost:3000</span></p>
+    <h3>C. ใช้ Docker Compose</h3>
+    <pre><code>docker-compose up -d
+# หยุด
+docker-compose down</code></pre>
+    <h3>D. Logs & Inspect</h3>
+    <pre><code>docker logs -f bblam-reactjs
+docker exec -it bblam-reactjs sh</code></pre>
+    <h3>E. ปรับ Backend Proxy (ใน <span class="inline-code">nginx.conf</span>)</h3>
+    <pre><code>location /api/ {
+  proxy_pass http://172.23.240.1:8000/api/;
+  # ... headers / forward settings ...
+}</code></pre>
+  </section>
+
+  <section>
+    <h2>6. Deploy ด้วย Kubernetes</h2>
+    <h3>A. สร้าง Image แล้ว Push (ถ้าใช้ Cluster Remote)</h3>
+    <pre><code># ตัวอย่างแท็กและ push
+docker build -t your-registry/bblam-reactjs:1.0.0 .
+docker push your-registry/bblam-reactjs:1.0.0</code></pre>
+    <h3>B. Apply Manifests</h3>
+    <pre><code>kubectl apply -f kubernetes/configmap.yaml
+kubectl apply -f kubernetes/deployment.yaml
+kubectl apply -f kubernetes/ingress.yaml   # (ถ้าติดตั้ง Ingress Controller แล้ว)</code></pre>
+    <h3>C. ตรวจสอบสถานะ</h3>
+    <pre><code>kubectl get pods -l app=bblam-reactjs
+kubectl get svc bblam-reactjs-service
+kubectl describe deployment bblam-reactjs</code></pre>
+    <h3>D. Scale</h3>
+    <pre><code>kubectl scale deployment bblam-reactjs --replicas=3</code></pre>
+    <h3>E. Access</h3>
+    <ul>
+      <li><strong>NodePort:</strong> http://NODE_IP:30080</li>
+      <li><strong>Ingress (hosts file):</strong> เพิ่ม <span class="inline-code">127.0.0.1 bblam-reactjs.local</span> แล้วเข้า <span class="inline-code">http://bblam-reactjs.local</span></li>
+    </ul>
+    <h3>F. ลบทรัพยากร</h3>
+    <pre><code>kubectl delete -f kubernetes/ingress.yaml
+kubectl delete -f kubernetes/deployment.yaml
+kubectl delete -f kubernetes/configmap.yaml</code></pre>
+  </section>
+
+  <section>
+    <h2>7. ตัวแปร & การปรับแต่ง</h2>
+    <h3>API Mode</h3>
+    <pre><code>// src/config/apiConfig.js
+export const API_MODE = 'DIRECT'; // หรือ 'PROXY'</code></pre>
+    <h3>ConfigMap (K8s)</h3>
+    <pre><code>API_BASE_URL: "http://172.23.240.1:8000"
+API_MODE: "PROXY"</code></pre>
+    <h3>Mock Mode</h3>
+    <pre><code>// src/services/mockAPI.js
+const MOCK_MODE = false; // เป็น true เพื่อทดสอบ frontend โดยไม่เรียก API จริง</code></pre>
+  </section>
+
+  <section>
+    <h2>8. Troubleshooting</h2>
+    <ul class="steps">
+      <li><strong>Token Error:</strong> ตรวจสอบโครงสร้าง JSON (field <span class="inline-code">data.access_token</span>)</li>
+      <li><strong>CORS Block:</strong> เปิด/แก้ Proxy ใน <span class="inline-code">nginx.conf</span> หรือ Backend เพิ่ม CORS Headers</li>
+      <li><strong>Ingress ไม่เข้า:</strong> เช็คว่า Ingress Controller ถูกติดตั้ง และ DNS / hosts file ถูกตั้งค่า</li>
+      <li><strong>Static ไม่โหลด:</strong> ลบ cache browser หรือเช็คสิทธิ์ไฟล์ใน container</li>
+    </ul>
+    <div class="panel-note">แนะนำให้เปิด Browser DevTools (F12) เพื่อดู Network + Console เมื่อเกิดข้อผิดพลาด</div>
+  </section>
+
+  <section>
+    <h2>9. Quick Commands สรุป</h2>
+    <div class="grid cols-2">
+      <div class="cmd-group">
+        <h3>Docker</h3>
+        <pre><code>docker build -t bblam-reactjs:latest .
+docker run -d -p 3000:80 --name bblam-reactjs bblam-reactjs:latest</code></pre>
+      </div>
+      <div class="cmd-group">
+        <h3>Kubernetes</h3>
+        <pre><code>kubectl apply -f kubernetes/
+kubectl get pods -l app=bblam-reactjs
+kubectl scale deployment bblam-reactjs --replicas=3</code></pre>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>10. License / Notes</h2>
+    <p>ภายในองค์กร BBLAM ใช้เพื่อทดลอง/สาธิต ไม่มีการแจกจ่ายสาธารณะ หากนำไปใช้ภายนอกควรตรวจสอบนโยบายก่อน</p>
+  </section>
+</main>
+<footer>
+  © 2025 BBLAM ReactJS Deployment Guide • สร้างเพื่อความสะดวกในการขึ้นระบบ
+</footer>
+</body>
+</html>
